@@ -1,47 +1,57 @@
 #!/bin/bash
-# Этот скрипт установит Rust, jq, build-essential (на Linux), скачает и запустит sfoundryup,
-# а затем сохранит в файлы строки с "key:" и "address:" из вывода sfoundryup.
+set -e
 
-# Если вы работаете в Linux, убедитесь, что установлены инструменты сборки
-if [ "$(uname)" != "Darwin" ]; then
-    echo "Устанавливаем build-essential..."
-    sudo apt-get update && sudo apt-get install -y build-essential
-fi
+echo "=== Обновление системы и установка необходимых пакетов ==="
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl git build-essential file unzip jq
 
-# Устанавливаем Rust (если уже установлен, просто обновит конфигурацию)
-echo "Устанавливаем Rust..."
+echo "=== Установка Rust ==="
 curl https://sh.rustup.rs -sSf | sh -s -- -y
-
-# Подключаем Cargo (обновите переменную PATH текущей сессии)
-echo "Подключаем Rust (Cargo)..."
+# Обновляем переменную окружения для Cargo
 source "$HOME/.cargo/env"
+rustc --version
 
-# Проверяем наличие jq и устанавливаем, если не найден
-if ! command -v jq >/dev/null 2>&1; then
-    if [ "$(uname)" = "Darwin" ]; then
-        echo "Устанавливаем jq для macOS..."
-        brew install jq
-    else
-        echo "Устанавливаем jq для Linux..."
-        sudo apt-get update && sudo apt-get install -y jq
-    fi
-fi
+echo "=== Установка sfoundryup ==="
+curl -L -H "Accept: application/vnd.github.v3.raw" \
+     "https://api.github.com/repos/SeismicSystems/seismic-foundry/contents/sfoundryup/install?ref=seismic" | bash
 
-# Скачиваем и устанавливаем sfoundryup
-echo "Устанавливаем sfoundryup..."
-curl -L -H "Accept: application/vnd.github.v3.raw" "https://api.github.com/repos/SeismicSystems/seismic-foundry/contents/sfoundryup/install?ref=seismic" | bash
-
-# Обновляем окружение (или перезапустите терминал, если необходимо)
-echo "Обновляем окружение..."
+# Обновляем окружение (если изменялось ~/.bashrc)
 source ~/.bashrc
 
-# Запускаем sfoundryup и сохраняем вывод
-echo "Запускаем sfoundryup (это может занять время, от 5 до 60 минут)..."
-output=$(sfoundryup)
+echo "=== Запуск sfoundryup (это может занять от 5 до 20 минут) ==="
+sfoundryup
 
-# Сохраняем вывод в лог-файл и фильтруем строки с ключом и адресом
-echo "$output" | tee ~/sfoundryup.log
-echo "$output" | grep -i "key:" > ~/sfoundry_key.txt
-echo "$output" | grep -i "address:" > ~/sfoundry_address.txt
+echo "=== Клонирование репозитория try-devnet и переход в каталог контрактов ==="
+git clone --recurse-submodules https://github.com/SeismicSystems/try-devnet.git
+cd try-devnet/packages/contract/
 
-echo "Установка завершена. Проверьте файлы ~/sfoundry_key.txt и ~/sfoundry_address.txt для получения информации о ключе и адресе."
+echo "=== Развёртывание контракта ==="
+bash script/deploy.sh
+
+echo "=== ВАЖНО! ==="
+echo "Перейдите по ссылке https://faucet-2.seismicdev.net/ и пополните кошелек (адрес, указанный в выводе deploy.sh) 0.1 ETH."
+read -p "Нажмите Enter после того, как транзакция будет подтверждена..."
+
+echo "=== Установка Bun для взаимодействия с контрактом ==="
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc
+bun --version
+
+echo "=== Переход в каталог cli и установка зависимостей ==="
+cd ../cli/
+bun install
+
+echo "=== Выполнение транзакции ==="
+bash script/transact.sh
+
+echo "=== Готово! Дополнительные ссылки Seismic Devnet ==="
+echo "Network Name: Seismic devnet"
+echo "Currency Symbol: ETH"
+echo "Chain ID: 5124"
+echo "RPC URL (HTTP): https://node-2.seismicdev.net/rpc"
+echo "RPC URL (WebSocket): wss://node-2.seismicdev.net/ws"
+echo "Explorer: https://explorer-2.seismicdev.net"
+echo "Faucet: https://faucet-2.seismicdev.net/"
+echo "Starter Repo: https://github.com/SeismicSystems/seismic-starter"
+
+echo "=== DONE! ==="
